@@ -1,0 +1,17 @@
+###
+GET http://localhost:3010/qtd
+
+###
+POST http://localhost:3010/insert
+Content-Type: application/json
+
+{
+  "nome": "John Doe",
+  "email": "john.doe@example.com",
+  "telefone": "1234567890",
+  "senha": "123456789",
+  "cpf_cnpj": "12345678901",
+  "tipo_pessoa": "A",
+  "data_nascimento": "1990-10-10"
+
+}
