@@ -173,7 +173,7 @@ export default function ListaVacinas() {
 
       const response =
         await fetch(
-          `/api/vacinas?id=${id}`,
+          `http://localhost:3010/deletevacina/${id}`,
           {
             method: "DELETE",
           }
@@ -190,7 +190,7 @@ export default function ListaVacinas() {
       setVacinas(
         vacinas.filter(
           vacina =>
-            vacina.id !== id
+            vacina.id_vacina !== id
         )
       );
 
@@ -251,10 +251,6 @@ export default function ListaVacinas() {
   );
 }, 0);
   
-
-
-  // *(ALUNA) Mesmo servidor/porta usado pelo cadastro de animais - é o
-  // Express (Server/index_ProjIn.js) que conversa com o SQL Server.
   const url: string = "http://localhost:3010";
 
   //===================== QUANTIDADE DE VACINAS ================
@@ -709,7 +705,7 @@ async function exibaVacina(url: string) {
                 onClick={() => {
 
                   router.push(
-                    `/cadastro-vacinas?id=${vacinaSelecionada.id}`
+                    `/cadastro-vacinas?id=${vacinaSelecionada.id_vacina}`
                   );
 
                 }}
@@ -721,10 +717,11 @@ async function exibaVacina(url: string) {
                 className="excluir-btn"
                 onClick={() =>
                   excluirVacina(
-                    vacinaSelecionada.id
+                    vacinaSelecionada.id_vacina
                   )
                 }
               >
+                {vacinaSelecionada.id_vacina} &nbsp;
                 Excluir
               </button>
 

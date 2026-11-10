@@ -322,6 +322,9 @@ app.post("/INSERT", upload.array("fotos", 3), async (req, res) => {
     });
 });
 
+//========== CADASTRO DE VACINAS ========================
+app.post('/addvacina', async (req, resp) => {
+    try {
 
         // FAZER UM OBJETO PARA RECEBER OS REQ
         const {
@@ -628,3 +631,200 @@ app.put('/usuarios/:id', async (req, res) => {
 app.listen(port, () => {
     console.log(`Servidor http://localhost:${port}`);
 }); 
+
+
+//deletar um registro de vacina 
+app.delete('/deletevacina/:id', async (req, res) => {
+    try {
+        // Pegar o ID da URL
+        const id = parseInt(req.params.id);
+        // Conectar ao SQL Server
+        const cn = await conectar();
+        // Executar DELETE
+        const result = await cn
+            .request()
+            .input('id', sql.Int, id)
+            .query(`
+                SET XACT_ABORT ON;
+                BEGIN TRAN;
+                DELETE FROM LOTE_VACINA WHERE id_vacina = @id;
+                DELETE FROM VACINA
+                OUTPUT DELETED.*
+                WHERE id_vacina = @id;
+                COMMIT;
+            `);
+
+        // Verificar se encontrou a vacina
+        if (result.recordset.length === 0) {
+            return res.status(404).json({
+                mensagem: 'Vacina não encontrada'
+            });
+
+        }
+
+        // Retornar confirmação
+        res.status(200).json({
+            mensagem: 'Vacina excluída com sucesso!',
+            vacina: result.recordset[0]
+        });
+
+    } catch (erro) {
+
+        console.error('Erro:', erro);
+
+        res.status(erro.number === 547 ? 409 : 500).json({
+            erro: erro.number === 547 ? 'Vacina possui lotes já aplicados e não pode ser excluída' : 'Erro ao excluir vacina',
+            detalhe: erro.message
+        });
+
+    }
+
+});
+
+//ler todos os registros de vacina
+app.get('/vacina/:id', async (req, resp) => {
+    try {
+        // Pegar ID da URL
+        const id = parseInt(req.params.id);
+
+        // FAZER  A CONTAGEM DE REGISTRO
+        const cn = await conectar();
+        const resultado = await cn.request()
+           .input('id', sql.Int, id)
+           .query(`
+               SELECT
+                   vacina.id_vacina, vacina.nome, vacina.descricao, vacina.especie, vacina.tipo,
+                   lote.numero_lote AS lote,
+                   lote.data_fabricacao AS dataFabricacao,
+                   lote.data_validade AS validade,
+                   lote.quantidade_disponivel AS quantidade,
+                   lote.valor_unitario AS valorUnitario,
+                   lote.responsavel AS responsavel,
+                   lote.temperatura AS temperatura,
+                   lote.local_armazenamento AS localArmazenamento,
+                   fabricante.nome AS fabricante,
+                   fornecedor.nome AS fornecedor,
+                   entrada.data_entrada AS dataEntrada,
+                   entrada.nota_fiscal AS notaFiscal,
+                   entrada.valor_total AS valorTotal
+               FROM VACINA vacina
+               OUTER APPLY (
+                   SELECT TOP 1 * FROM LOTE_VACINA lv
+                   WHERE lv.id_vacina = vacina.id_vacina
+                   ORDER BY lv.id_lote_vacina DESC
+               ) lote
+               LEFT JOIN FABRICANTE fabricante ON fabricante.id_fabricante = lote.id_fabricante
+               LEFT JOIN ENTRADA_ESTOQUE entrada ON entrada.id_entrada = lote.id_entrada
+               LEFT JOIN FORNECEDOR fornecedor ON fornecedor.id_fornecedor = entrada.id_fornecedor
+               WHERE vacina.id_vacina = @id`);
+        if (resultado.recordset.length === 0) {
+            return resp.status(404).json({ mensagem: 'Vacina não encontrada' });
+        }
+        resp.json(resultado.recordset[0]);
+    }
+    catch (error) {
+        resp.json({ "tipo de erro ": error })
+    }
+
+
+})
+
+
+//========== EDITAR VACINA (vacina + lote mais recente + entrada) ==========
+app.put('/updatevacina/:id', async (req, resp) => {
+    try {
+        const id = parseInt(req.params.id);
+        const {
+            nome, descricao, especie, tipo, fabricante, lote,
+            dataFabricacao, dataValidade, quantidadeRecebida, dataEntrada,
+            responsavel, fornecedor, notaFiscal, valorUnitario, valorTotal,
+            temperatura, localArmazenamento
+        } = req.body;
+
+        const cn = await conectar();
+
+        // 1) VACINA
+        const vac = await cn.request()
+            .input('id', sql.Int, id)
+            .input('nome', sql.VarChar(100), nome)
+            .input('descricao', sql.VarChar(250), descricao || null)
+            .input('especie', sql.VarChar(100), especie)
+            .input('tipo', sql.VarChar(100), tipo)
+            .query(`UPDATE VACINA
+                       SET nome = @nome, descricao = @descricao, especie = @especie, tipo = @tipo
+                    OUTPUT INSERTED.id_vacina
+                     WHERE id_vacina = @id`);
+        if (vac.recordset.length === 0) {
+            return resp.status(404).json({ erro: 'Vacina não encontrada' });
+        }
+
+        // 2) FABRICANTE (acha ou cria)
+        let id_fabricante = null;
+        if (fabricante && String(fabricante).trim() !== "") {
+            const f = await cn.request().input('nome', sql.VarChar(100), fabricante)
+                .query(`SELECT id_fabricante FROM FABRICANTE WHERE nome = @nome`);
+            id_fabricante = f.recordset.length
+                ? f.recordset[0].id_fabricante
+                : (await cn.request().input('nome', sql.VarChar(100), fabricante)
+                    .query(`INSERT INTO FABRICANTE (nome) OUTPUT INSERTED.id_fabricante VALUES (@nome)`)).recordset[0].id_fabricante;
+        }
+
+        // 3) FORNECEDOR (acha ou cria)
+        let id_fornecedor = null;
+        if (fornecedor && String(fornecedor).trim() !== "") {
+            const f = await cn.request().input('nome', sql.VarChar(100), fornecedor)
+                .query(`SELECT id_fornecedor FROM FORNECEDOR WHERE nome = @nome`);
+            id_fornecedor = f.recordset.length
+                ? f.recordset[0].id_fornecedor
+                : (await cn.request().input('nome', sql.VarChar(100), fornecedor)
+                    .query(`INSERT INTO FORNECEDOR (nome) OUTPUT INSERTED.id_fornecedor VALUES (@nome)`)).recordset[0].id_fornecedor;
+        }
+
+        // 4) LOTE mais recente da vacina
+        const lt = await cn.request().input('id', sql.Int, id)
+            .query(`SELECT TOP 1 id_lote_vacina, id_entrada FROM LOTE_VACINA
+                     WHERE id_vacina = @id ORDER BY id_lote_vacina DESC`);
+        if (lt.recordset.length > 0) {
+            const { id_lote_vacina, id_entrada } = lt.recordset[0];
+
+            // 5) ENTRADA_ESTOQUE do lote (só se já existir e tiver fornecedor/data)
+            if (id_entrada && id_fornecedor && dataEntrada) {
+                await cn.request()
+                    .input('ent', sql.Int, id_entrada)
+                    .input('forn', sql.Int, id_fornecedor)
+                    .input('data', sql.Date, dataEntrada)
+                    .input('nf', sql.VarChar(50), notaFiscal || null)
+                    .input('total', sql.Decimal(10, 2), Number(valorTotal) || 0)
+                    .query(`UPDATE ENTRADA_ESTOQUE
+                               SET id_fornecedor = @forn, data_entrada = @data,
+                                   nota_fiscal = @nf, valor_total = @total
+                             WHERE id_entrada = @ent`);
+            }
+
+            const qtd = Number(quantidadeRecebida);
+            await cn.request()
+                .input('lt', sql.Int, id_lote_vacina)
+                .input('fab', sql.Int, id_fabricante)
+                .input('lote', sql.VarChar(30), lote)
+                .input('fabr', sql.Date, dataFabricacao || null)
+                .input('val', sql.Date, dataValidade)
+                .input('qtd', sql.Int, Number.isFinite(qtd) ? qtd : 0)
+                .input('vu', sql.Decimal(10, 2), valorUnitario ? Number(valorUnitario) : null)
+                .input('resp', sql.VarChar(100), responsavel || null)
+                .input('temp', sql.VarChar(50), temperatura || null)
+                .input('loc', sql.VarChar(100), localArmazenamento || null)
+                .query(`UPDATE LOTE_VACINA
+                           SET id_fabricante = @fab, numero_lote = @lote,
+                               data_fabricacao = @fabr, data_validade = @val,
+                               quantidade_total = @qtd, quantidade_disponivel = @qtd,
+                               valor_unitario = @vu, responsavel = @resp,
+                               temperatura = @temp, local_armazenamento = @loc
+                         WHERE id_lote_vacina = @lt`);
+        }
+
+        resp.status(200).json({ MS: 'OK' });
+    } catch (e) {
+        console.error(e);
+        resp.status(500).json({ erro: e.message });
+    }
+});

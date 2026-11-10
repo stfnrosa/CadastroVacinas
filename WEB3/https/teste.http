@@ -13,5 +13,10 @@ Content-Type: application/json
   "cpf_cnpj": "12345678901",
   "tipo_pessoa": "A",
   "data_nascimento": "1990-10-10"
-
 }
+
+###
+GET http://localhost:3010/vacina/1004
+
+###
+DELETE http://localhost:3010/deletevacina/1004

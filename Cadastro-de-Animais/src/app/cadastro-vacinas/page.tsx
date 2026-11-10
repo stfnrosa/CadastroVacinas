@@ -75,6 +75,21 @@ const vacinaSchema = Yup.object({
     .required("Informe se necessita de refrigeração"),
 })
 
+// Normaliza o texto do banco ("Cão", "Antirrábica", "Geladeira 2") para o value
+// usado nos selects ("cao", "Antirrabica", "geladeira2"): sem acento/espaço.
+function chave(t: unknown) {
+  return String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/s+/g, "").toLowerCase();
+}
+const OPCOES: Record<string, string> = {
+  cao: "cao", gato: "gato", ambos: "ambos",
+  v3: "V3", v4: "V4", v8: "V8", v10: "V10", antirrabica: "Antirrabica",
+  geladeira1: "geladeira1", geladeira2: "geladeira2", geladeira3: "geladeira3",
+  freezer: "freezer", sala: "sala", salaveterinaria: "sala",
+};
+function casar(valor: unknown) {
+  return OPCOES[chave(valor)] ?? "";
+}
+
 export default function CadastroVacinaPage() {
 
   const router = useRouter();
@@ -110,21 +125,9 @@ export default function CadastroVacinaPage() {
 
   //===== Mudanças
 
-  // *(ALUNA) Igual ao cadastro de animal: o caminho base do servidor Express
-  // (Server/index_ProjIn.js) é o mesmo para os dois cadastros, só muda a
-  // rota no final (ex.: /addvacina). A rota /UPDATE ainda não existe no
-  // servidor nem para vacina nem para animal - os dois cadastros hoje só
-  // gravam no banco de verdade quando estão CRIANDO (POST), a edição (PUT)
-  // é um ponto em aberto também no cadastro de animal.
+  
   const url = "http://localhost:3010";
-
-  // *(ALUNA) Função antiga de teste (addVacina) foi removida daqui: ela
-  // chamava uma rota "/addVacina" (maiúsculo) que não existe no servidor e
-  // nunca era chamada em lugar nenhum do formulário - o cadastro de verdade
-  // é feito pelo onSubmit do Formik logo abaixo, no mesmo padrão usado no
-  // cadastro de animais.
-
-
+  
   useEffect(() => {
 
     if (!modoEdicao) {
@@ -136,16 +139,15 @@ export default function CadastroVacinaPage() {
       try {
 
         const response =
-          await fetch("/api/vacinas");
+          await fetch(`${url}/vacina/${vacinaId}`);
 
-        const vacinas =
-          await response.json();
+        const vacina = await response.json();
 
-        const vacina =
+        /* const vacina =
           vacinas.find(
             (v: any) =>
-              v.id === Number(vacinaId)
-          );
+              Number(v.id_vacina) === Number(vacinaId)
+          ); */
 
         if (!vacina) {
           return;
@@ -153,19 +155,19 @@ export default function CadastroVacinaPage() {
 
         setDadosIniciais({
           nomeVacina: vacina.nome || "",
-          tipoVacina: vacina.tipo || "",
-          especie: vacina.especie || "",
+          tipoVacina: casar(vacina.tipo),
+          especie: casar(vacina.especie),
           fabricante: vacina.fabricante || "",
           descricao: vacina.descricao || "",
           numeroLote: vacina.lote || "",
           dataFabricacao:
-            vacina.dataFabricacao || "",
+            String(vacina.dataFabricacao || "").slice(0, 10),
           dataValidade:
-            vacina.validade || "",
+            String(vacina.validade || "").slice(0, 10),
           quantidadeRecebida:
             vacina.quantidade || "",
           dataEntrada:
-            vacina.dataEntrada || "",
+            String(vacina.dataEntrada || "").slice(0, 10),
           responsavel:
             vacina.responsavel || "",
           fornecedor:
@@ -178,8 +180,7 @@ export default function CadastroVacinaPage() {
             vacina.valorTotal || "",
           temperatura:
             vacina.temperatura || "",
-          localArmazenamento:
-            vacina.localArmazenamento || "",
+          localArmazenamento: casar(vacina.localArmazenamento),
           refrigeracao:
             vacina.refrigeracao || false,
         });
@@ -221,22 +222,14 @@ export default function CadastroVacinaPage() {
         </div>
 
         <Formik
-          initialValues={
-            dadosIniciais
-          }
+          initialValues={dadosIniciais}
           enableReinitialize
           // validationSchema={vacinaSchema}
           onSubmit={
             async (values, { resetForm }) => {
               try {
 
-                // *(ALUNA) O cadastro de animal usa FormData porque precisa
-                // enviar arquivos (fotos) junto - por isso usa multer no
-                // servidor. Vacina não tem upload de arquivo, então aqui
-                // basta mandar um JSON normal (igual é feito mais abaixo em
-                // "body"). Este FormData ficou de um teste e não é usado em
-                // lugar nenhum (o fetch abaixo manda "body" em JSON, não
-                // "formData").
+              
                 // ==========================================
                 const formData = new FormData();
                 // PEGAR OS NAME DO FORMULARIO
@@ -273,17 +266,13 @@ export default function CadastroVacinaPage() {
 
 
 
-                // *(ALUNA) Igual ao cadastro de animal: rota muda conforme
-                // modoEdicao. "/addvacina" já existe e funciona no servidor
-                // (Server/index_ProjIn.js). "/UPDATE" ainda não existe no
-                // servidor - a edição de vacina (assim como a de animal)
-                // fica como próximo passo a implementar no backend.
-                const caminho = modoEdicao ? url + "/UPDATE" : url + "/addvacina";
+              
+                const caminho = modoEdicao ? `${url}/updatevacina/${vacinaId}` : url + "/addvacina";
 
 
                 const response = await fetch(caminho, {
                   method: modoEdicao ? "PUT" : "POST",
-                  // TIREI ESTA PARA DEFIDO DO FORMDATA
+                  
                   headers: {
                     "Content-Type": "application/json",
                   },
@@ -291,16 +280,7 @@ export default function CadastroVacinaPage() {
                   // body: formData
                 });
 
-                // *(ALUNA) "response" é o objeto Response do fetch, ele não
-                // tem campo "MS" (isso nunca é verdadeiro) - quem manda
-                // { "MS": "OK" } é o JSON retornado pelo servidor, que
-                // precisaria ser lido com "await response.json()" antes de
-                // comparar. Deixei comentado em vez de apagar para não
-                // mudar o fluxo existente; o aviso de sucesso real já é
-                // feito logo abaixo com o alert() de sempre.
-                // if ((await response.json()).MS === "OK") {
-                //   alert("Cadastro com Sucesso!!");
-                // }
+            
 
                 if (!response.ok) {
 
@@ -343,8 +323,6 @@ export default function CadastroVacinaPage() {
           {() => (
 
             <Form className="vacina-form">
-
-              {/* INFORMAÇÕES DA VACINA */}
 
               <div className="form-card">
                 <h2>
@@ -389,6 +367,10 @@ export default function CadastroVacinaPage() {
 
                       <option value="V4">
                         V4
+                      </option>
+
+                      <option value="V3">
+                        V3
                       </option>
                     </Field>
 
@@ -652,6 +634,14 @@ export default function CadastroVacinaPage() {
 
                       <option value="geladeira1">
                         Geladeira 1
+                      </option>
+
+                      <option value="geladeira2">
+                        Geladeira 2
+                      </option>
+
+                      <option value="geladeira3">
+                        Geladeira 3
                       </option>
 
                       <option value="freezer">
